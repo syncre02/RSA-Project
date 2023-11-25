@@ -6,18 +6,24 @@ import { Buffer } from 'buffer';
 export const manager = new BleManager();
 
 export default BlindInfo = () => {
-  const [openingPercentage, setOpeningPercentage] = useState(50);
-  const [isTestingMode, setIsTestingMode] = useState(false);
-  const [outsideTemperature, setOutsideTemperature] = useState(25);
   const [isConnected, setIsConnected] = useState(false);
-  const [wantedTemperature, setWantedTemperature] = useState(25);
-  const [readOutChanges, setReadOutChanges] = useState(false);
-  const [chosenValue, setChosenValue] = useState(0);
   const [peripheralId, setPeripheralId] = useState('');
   const [scanning, setScanning] = useState(false);
   const [readyToScan, setReadyToScan] = useState(false);
   const [serviceUUID, setServiceUUID] = useState('0000ffe0-0000-1000-8000-00805f9b34fb');
   const [characteristicUUID, setCharacteristicUUID] = useState('0000ffe1-0000-1000-8000-00805f9b34fb');
+  const [lightLevel, setLightLevel] = useState(50);
+  const [step, setStep] = useState(0);
+  const [distance, setDistance] = useState(50);
+  const [openTime, setOpenTime] = useState('00:00');
+  const [closeTime, setCloseTime] = useState('11:25');
+  const [lowerTemperature, setLowerTempature] = useState(25);
+  const [upperTemperature, setUpperTempature] = useState(50);
+  const [chosenOpenvalue, setChosenOpenValue] = useState(0);
+  const [donePreliminary, setDonePreliminary] = useState(false);
+  const [sentData, setSentData] = useState(false);
+
+
 
   const requestBluetoothPermission = async () => {
     if (Platform.OS === 'ios') {
@@ -77,17 +83,26 @@ export default BlindInfo = () => {
     return false;
   };
 
+  const waitUntilBluetoothReady = async () => {
+    while (!manager.state) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  };
+  
   useEffect(() => {
+    setStep(0);
     requestBluetoothPermission().then((hasBluetoothPermission) => {
       if (hasBluetoothPermission) {
         console.log('Bluetooth permission granted');
-        requestLocationPermission().then((hasLocationPermission) => {
-          if (hasLocationPermission) {
-            console.log('Location permission granted');
-            setReadyToScan(true);
-          } else {
-            console.error('Location permission not granted');
-          }
+        waitUntilBluetoothReady().then(() => {
+          requestLocationPermission().then((hasLocationPermission) => {
+            if (hasLocationPermission) {
+              console.log('Location permission granted');
+              setReadyToScan(true);
+            } else {
+              console.error('Location permission not granted');
+            }
+          });
         });
       } else {
         console.error('Bluetooth permission not granted');
@@ -101,7 +116,7 @@ export default BlindInfo = () => {
       return;
     }
     if (scanning) {
-      //stop scanning
+      // Stop scanning
       console.log('Stopping scan...');
       manager.stopDeviceScan();
       setScanning(false);
@@ -114,6 +129,7 @@ export default BlindInfo = () => {
           return;
         }
         if (device.name === 'DSD TECH' && isConnected === false) {
+          setStep(0);
           setScanning(false);
           connectToDevice(device);
           manager.stopDeviceScan();
@@ -129,41 +145,75 @@ export default BlindInfo = () => {
       setPeripheralId(connectedDevice.id);
       setIsConnected(true);
   
+      // Wait until the connection is established before proceeding
+      await connectedDevice.isConnected();
+  
       // Discover services and characteristics
       await getServiceAndCharacteristics(connectedDevice);
+
+      // Subscribe to updates
+      connectedDevice.monitorCharacteristicForService(serviceUUID, characteristicUUID, (error, characteristic) => {
+        if (error) {
+          console.error('Error on monitoring:', error);
+          return;
+        }
+        if (characteristic.value) {
+          const base64Value = Buffer.from(characteristic.value, 'base64').toString('ascii');
+          if (base64Value === 'R' && step == 0) {
+            runOnceCommandToDevice(connectedDevice);
+          } 
+        }
+      });
+
+      // When disconnected, go back to step 0
+      connectedDevice.onDisconnected(() => {
+        console.log('Disconnected from device');
+        setIsConnected(false);
+        setStep(0);
+        setSentData(false);
+
+      });
+
+      
     } catch (error) {
       console.error('Connection error:', error);
-      if (error.errorCode === 133) {
-        console.log('Device already connected, reconnecting...');
-        setIsConnected(true);
-        const connectedDevice = manager.devices.get(peripheralId);
-        if (connectedDevice) {
-          await connectedDevice.cancelConnection();
-        }
-      }
       setIsConnected(false);
     }
   };
-  
-  const getServiceAndCharacteristics = async (device) => {
-    try {
-      const discoveredDevice = await device.discoverAllServicesAndCharacteristics();
-      console.log('All Services and Characteristics:', discoveredDevice);
-    } catch (error) {
-      console.error('Error discovering services and characteristics:', error);
+
+  const runOnceCommandToDevice = async () => {
+    if (sentData) {
+      return;
+    }
+    setSentData(true);
+    console.log('Sending Ready to Device');
+    if (await handleSendData('R')) {
+      console.log('Device is ready');
+      setStep(1);
     }
   };
   
-  
-  const handleToggleTestingMode = () => {
-    setIsTestingMode(!isTestingMode);
-  };
 
-  const handleSendData = async () => {
-    console.log('Sending data...');
-    console.log('Chosen value:', chosenValue);
-    console.log(peripheralId);
-    const data = 'Hello, World!';
+  
+
+  const getServiceAndCharacteristics = async (device) => {
+    try {
+      // Discover services
+      const services = await device.discoverAllServicesAndCharacteristics();
+    } catch (error) {
+      console.error('Error on discovering services:', error);
+    }
+  };
+  
+
+  const handleSendData = async (data) => {
+    if(data === "Startup"){
+      data = "Startup: " + lowerTemperature + " " + upperTemperature + " " + lightLevel + " "  + distance + " " + openTime + " " + closeTime + " " + ":E";
+      setDonePreliminary(true);
+    } 
+    if (data === "Open") {
+      data = "O: " + chosenOpenvalue.toString() + " :E";
+    }
     const base64Value = Buffer.from(data).toString('base64');
     try {
       await manager.writeCharacteristicWithResponseForDevice(
@@ -172,107 +222,155 @@ export default BlindInfo = () => {
         characteristicUUID,
         base64Value
       );
-    } catch (error) { 
+      console.log('Data sent successfully');
+      return true;
+    } catch (error) {
       console.error('Error on sending data:', error);
+      return false;
     }
-
   };
+  
 
   const disconnectFromDevice = async () => {
     try {
       setIsConnected(false);
+      setStep(0);
       await manager.cancelDeviceConnection(peripheralId);2
     } catch (error) {
       console.error('Error on disconnection:', error);
     }
   };
   
-
-
   return (
-    <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
-      <View  style={styles.container}>
-        <View style={styles.connectionContainer}>
-          { isConnected ? (
-            <View style={styles.connectionContainer}>
-              <Text style={styles.connectionText}>Device ID: {peripheralId}</Text>
-              <Text style={styles.connectionText}>Device Name: HC-06</Text>
-              <Button title="Disconnect from Device" onPress={disconnectFromDevice} style={styles.button} />
-            </View>
-          ) : (
-            <Button title="Scan for Devices" onPress={scanAndConnect} style={styles.button} />
-          )}
-
-          <Text style={[styles.connectionText, { color: isConnected ? 'green' : 'red' }]}>
-            {isConnected ? 'Connected' : 'Disconnected'}
-          </Text>
-        </View>
-
+    <View contentContainerStyle={{backgroundColor: '#fff', flexGrow: 1}}>
+      <View style={styles.container}>
         <StatusBar style="auto" />
-        <Text style={styles.title}>Window Blind Information</Text>
 
-        <Text style={styles.infoText}>Opening Percentage: {openingPercentage}%</Text>
+        {step === 0 && (
+          <View style={styles.connectionContainer}>
+            <Text style={[styles.connectionText, { color: isConnected ? 'green' : 'red' }]}>
+            {isConnected ? 'Connected' : 'Disconnected'}
+            </Text>
+            {isConnected ? (
+              <View style={styles.connectionContainer}>
+                <Text style={styles.connectionText}>Device ID: {peripheralId}</Text>
+                <Text style={styles.connectionText}>Device Name: DSD TECH</Text>
+                <Button title="Disconnect from Device" onPress={disconnectFromDevice} style={styles.button} />
+                <Text style={styles.connectionText}>Please Wait for the window blind to finish starting up</Text>
+                <ActivityIndicator size="large" color="#0000ff" />
+              </View>
+            ) : (
+              <Button title="Scan for Devices" onPress={scanAndConnect} style={styles.button} />
+            )}
 
-        <Text style={styles.infoText}>Outside Temperature: {outsideTemperature}°C</Text>
-
-        <Text style={styles.infoText}>
-          Window Blind Status: {openingPercentage > 50 ? 'Open' : 'Closed'}
-        </Text>
-
-        {openingPercentage > 50 ? (
-          <Button title="Open" onPress={() => setOpeningPercentage(100)} style={styles.button} />
-        ) : (
-          <Button title="Close" onPress={() => setOpeningPercentage(0)} style={styles.button} />
+          </View>
+        )}  
+        {step === 1 && (
+           <View style={styles.preliminaryContainer}>
+           <Text style={styles.title}>Window Blind Commands</Text>
+           <View style={styles.overallContainer}>
+             <Text style={styles.infoText}>Set Upper and Lower Temperature Limits:</Text>
+              <View style={styles.overallInputContainer}>
+                <Text style={styles.infoText}>Lower Temperature Limit: </Text>
+                <TextInput
+                  style={styles.overallInput}
+                  placeholder={lowerTemperature.toString()}
+                  value={lowerTemperature.toString()}
+                  onChangeText={(text) => setLowerTempature(text)}
+                  keyboardType="numeric"
+                  maxLength={2}
+                />
+              </View>
+              <View style={styles.overallInputContainer}>
+                <Text style={styles.infoText}>Upper Temperature Limit: </Text>
+                <TextInput
+                  style={styles.overallInput}
+                  placeholder={upperTemperature.toString()}
+                  value={upperTemperature.toString()}
+                  onChangeText={(text) => setUpperTempature(text)}
+                  keyboardType="numeric"
+                  maxLength={2}
+                />
+              </View>
+              <Text style={styles.infoText}>Set Light Percentage to Open at:</Text>
+              <View style={styles.overallInputContainer}>
+                <Text style={styles.infoText}>Light Percentage: </Text>
+                <TextInput
+                  style={styles.overallInput}
+                  placeholder={lightLevel.toString()}
+                  value={lightLevel.toString()}
+                  onChangeText={(text) => setLightLevel(text)}
+                  keyboardType="numeric"
+                  maxLength={2}
+                />
+              </View>
+              <Text style={styles.infoText}>Set Distance to Open at:</Text>
+              <View style={styles.overallInputContainer}>
+                <Text style={styles.infoText}>Distance: </Text>
+                <TextInput
+                  style={styles.overallInput}
+                  placeholder={distance.toString()}
+                  value={distance.toString()}
+                  onChangeText={(text) => setDistance(text)}
+                  keyboardType="numeric"
+                  maxLength={2}
+                />
+              </View>
+              <Text style={styles.infoText}>Set the time that the window {"\n"}
+              blinds will open and close:</Text>
+              <View style={styles.overallInputContainer}>
+                <Text style={styles.infoText}>Open Time: </Text>
+                <TextInput
+                  style={styles.overallInput}
+                  placeholder= {openTime}
+                  value = {openTime}
+                  onChangeText={(text) => setOpenTime(text)}
+                  maxLength={5}
+                />
+              </View>
+              <View style={styles.overallInputContainer}>
+                <Text style={styles.infoText}>Close Time: </Text>
+                <TextInput
+                  style={styles.overallInput}
+                  placeholder= {closeTime}
+                  value = {closeTime}
+                  onChangeText={(text) => setCloseTime(text)}
+                  maxLength={5}
+                />
+              </View>
+              <Button title="Send Startup Data" onPress={() => handleSendData("Startup")} style={styles.button} />
+              <View style={styles.overallInputContainer}>
+                <Text style={styles.infoText}>Open Blind To: </Text>
+                <TextInput
+                  style={styles.overallInput}
+                  placeholder={chosenOpenvalue.toString()}
+                  value={chosenOpenvalue.toString()}
+                  onChangeText={(text) => setChosenOpenValue(text)}
+                  maxLength={3}
+                  keyboardType="numeric"
+                />
+              </View>
+              <Button title="Send Open Value" onPress={() => handleSendData("Open")} style={styles.button} />
+            </View>
+          </View>
         )}
 
-        <View style={styles.temperatureContainer}>
-          <Text style={styles.infoText}>What Temperature to Open the Window Blind at:</Text>
-          <View style={styles.temperatureInputContainer}>
-            <Text style={styles.infoText}>Temperature to Open at: </Text>
-            <TextInput
-              style={styles.temperatureInput}
-              placeholder="25"
-              onChangeText={(text) => setWantedTemperature(text)}
-              keyboardType="numeric"
-              maxLength={2}
-            />
-          </View>
+          <View style={styles.BackAndNext}>
+          {step === 1 && (
+            <Button title="Back" onPress={() => setStep(0)} style={styles.button} />
+          )}
         </View>
-
-        <Button title="Read Out Changes" onPress={() => setReadOutChanges(true)} style={styles.button} />
-
-        <Button
-          title={isTestingMode ? 'Turn off Testing Mode' : 'Turn on Testing Mode'}
-          onPress={handleToggleTestingMode}
-          style={styles.button}
-        />
-        {isTestingMode ? (
-          <View style={styles.sliderContainer}>
-            <Text style={styles.sliderValueText}>
-              Testing Mode is on. Please wait for the window blind to map its closed and open positions.
-            </Text>
-            <ActivityIndicator size="large" color="#007AFF" />
-          </View>
-        ) : (
-          <View style={styles.sliderContainer}>
-            <Text style={styles.infoText}>
-              Choose a value between 1 and 100 to open the window blind to:
-            </Text>
-            <Text style={styles.sliderValueText}>Chosen Value: {chosenValue}</Text>
-            {isConnected && <Button title="Send Data" onPress={handleSendData} style={styles.button} />}
-          </View>
-        )}
       </View>
-    </ScrollView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
-    justifyContent: 'center',
     backgroundColor: '#fff',
+    justifyContent: 'center',
+    padding: 20,
   },
   connectionContainer: {
     marginBottom: 20,
@@ -305,19 +403,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   button: {
-    margin: 10,
+    marginTop: 10,
     color: '#007AFF',
+    marginBottom: 10,
   },
-  temperatureContainer: {
+  overallContainer: {
     marginBottom: 20,
     alignItems: 'center',
   },
-  temperatureInputContainer: {
+  overallInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  temperatureInput: {
+  overallInput: {
     width: 60,
     fontSize: 16,
     textAlign: 'center',

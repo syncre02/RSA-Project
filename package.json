@@ -9,7 +9,12 @@
   },
   "dependencies": {
     "@config-plugins/react-native-ble-plx": "^7.0.0",
+    "@emotion/react": "^11.11.1",
+    "@emotion/styled": "^11.11.0",
     "@expo/webpack-config": "^19.0.0",
+    "@mui/material": "^5.14.18",
+    "@react-native-community/datetimepicker": "^7.6.2",
+    "@react-native-community/slider": "^4.4.3",
     "@types/react": "~18.2.14",
     "cordova-plugin-bluetooth-serial": "^0.4.7",
     "eas-cli": "^5.7.0",
