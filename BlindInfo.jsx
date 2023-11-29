@@ -173,8 +173,6 @@ export default BlindInfo = () => {
         setSentData(false);
 
       });
-
-      
     } catch (error) {
       console.error('Connection error:', error);
       setIsConnected(false);
@@ -187,7 +185,7 @@ export default BlindInfo = () => {
     }
     setSentData(true);
     console.log('Sending Ready to Device');
-    if (await handleSendData('R')) {
+    if (await handleSendData("Ready")) {
       console.log('Device is ready');
       setStep(1);
     }
@@ -207,6 +205,9 @@ export default BlindInfo = () => {
   
 
   const handleSendData = async (data) => {
+    if (data === "Ready") {
+      data = "R: " + new Date().getTime().toString() + " :E";
+    }
     if(data === "Startup"){
       data = "Startup: " + lowerTemperature + " " + upperTemperature + " " + lightLevel + " "  + distance + " " + openTime + " " + closeTime + " " + ":E";
       setDonePreliminary(true);
