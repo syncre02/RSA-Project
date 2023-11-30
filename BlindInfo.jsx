@@ -154,12 +154,13 @@ export default BlindInfo = () => {
       // Subscribe to updates
       connectedDevice.monitorCharacteristicForService(serviceUUID, characteristicUUID, (error, characteristic) => {
         if (error) {
-          console.error('Error on monitoring:', error);
+          console.errror('Error on monitoring:', error);
           return;
         }
         if (characteristic.value) {
           const base64Value = Buffer.from(characteristic.value, 'base64').toString('ascii');
           if (base64Value === 'R' && step == 0) {
+            setStep(1);
             runOnceCommandToDevice(connectedDevice);
           } 
         }
@@ -180,17 +181,14 @@ export default BlindInfo = () => {
   };
 
   const runOnceCommandToDevice = async () => {
-    if (sentData) {
+    if (sentData === true) {
       return;
     }
     setSentData(true);
-    console.log('Sending Ready to Device');
     if (await handleSendData("Ready")) {
       console.log('Device is ready');
-      setStep(1);
     }
   };
-  
 
   
 
@@ -206,7 +204,15 @@ export default BlindInfo = () => {
 
   const handleSendData = async (data) => {
     if (data === "Ready") {
-      data = "R: " + new Date().getTime().toString() + " :E";
+      //convert time to 24 hour format
+      var currentTime = new Date();
+      var hours = currentTime.getHours();
+      var minutes = currentTime.getMinutes();
+      if (minutes < 10) {
+        minutes = "0" + minutes;
+      }
+      var time = hours + ":" + minutes;
+      data = "R: " + time + " :E";
     }
     if(data === "Startup"){
       data = "Startup: " + lowerTemperature + " " + upperTemperature + " " + lightLevel + " "  + distance + " " + openTime + " " + closeTime + " " + ":E";
@@ -216,6 +222,7 @@ export default BlindInfo = () => {
       data = "O: " + chosenOpenvalue.toString() + " :E";
     }
     const base64Value = Buffer.from(data).toString('base64');
+    console.log('Sending data:', data);
     try {
       await manager.writeCharacteristicWithResponseForDevice(
         peripheralId,
