@@ -1,0 +1,24 @@
+Steps to use:
+
+Install Node.js: https://nodejs.org/en
+
+Restart terminal if it's open.
+Navigate to the project repo, and run npm install.
+Afterwards, just run npm run start. (Make sure the phone and the computer are on the same network before you do this step.)
+
+![This is what it should look like](image.png)
+
+Now, on the android phone, open up the Expo Go App. 
+
+You can use the QRCode to look for open projects and click on the window blinds project.
+The app itself should be pretty clear to use just DM Me beforehand if you're unsure.
+
+The date is in 24hour format - do 00:00 for midnight and 12:00 for noon.
+Open Percentage is out of 100. 100% is fully open, 0% is fully closed.
+
+Everytime you need to restart the program, go back to the original page in the app and disconnet.
+
+If you forget, just unplug the Arduino/Bluetooth module and plug it back in. It should be flashing before you try to reconnect.
+
+
+
