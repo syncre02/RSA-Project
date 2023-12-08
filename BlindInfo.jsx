@@ -22,7 +22,7 @@ export default BlindInfo = () => {
   const [chosenOpenvalue, setChosenOpenValue] = useState(0);
   const [donePreliminary, setDonePreliminary] = useState(false);
   const [sentData, setSentData] = useState(false);
-
+  const [userInput, setUserInput] = useState(false);
 
 
   const requestBluetoothPermission = async () => {
@@ -122,7 +122,6 @@ export default BlindInfo = () => {
       setScanning(false);
     } else {
       setScanning(true);
-      console.log('Scanning for devices...');
       manager.startDeviceScan(null, null, (error, device) => {
         if (error) {
           console.error('Error on scanning:', error);
@@ -130,7 +129,6 @@ export default BlindInfo = () => {
         }
         if (device.name === 'DSD TECH' && isConnected === false) {
           setStep(0);
-          setScanning(false);
           connectToDevice(device);
           manager.stopDeviceScan();
         }
@@ -154,13 +152,12 @@ export default BlindInfo = () => {
       // Subscribe to updates
       connectedDevice.monitorCharacteristicForService(serviceUUID, characteristicUUID, (error, characteristic) => {
         if (error) {
-          console.errror('Error on monitoring:', error);
+          console.error('Error on monitoring:', error);
           return;
         }
         if (characteristic.value) {
           const base64Value = Buffer.from(characteristic.value, 'base64').toString('ascii');
           if (base64Value === 'R' && step == 0) {
-            setStep(1);
             runOnceCommandToDevice(connectedDevice);
           } 
         }
@@ -182,11 +179,13 @@ export default BlindInfo = () => {
 
   const runOnceCommandToDevice = async () => {
     if (sentData === true) {
+      
       return;
     }
     setSentData(true);
     if (await handleSendData("Ready")) {
       console.log('Device is ready');
+      setStep(1);
     }
   };
 
@@ -212,10 +211,10 @@ export default BlindInfo = () => {
         minutes = "0" + minutes;
       }
       var time = hours + ":" + minutes;
-      data = "R: " + time + " :E";
+      data = "R: " + time + " " + userInput + " :E";
     }
     if(data === "Startup"){
-      data = "Startup: " + lowerTemperature + " " + upperTemperature + " " + lightLevel + " "  + distance + " " + openTime + " " + closeTime + " " + ":E";
+      data = "Startup: " + lowerTemperature + " " + upperTemperature + " " + lightLevel + " "  + distance + " " + openTime + " " + closeTime + ":E";
       setDonePreliminary(true);
     } 
     if (data === "Open") {
@@ -234,18 +233,29 @@ export default BlindInfo = () => {
       return true;
     } catch (error) {
       console.error('Error on sending data:', error);
+      setStep(0);
       return false;
     }
   };
   
-
   const disconnectFromDevice = async () => {
     try {
       setIsConnected(false);
       setStep(0);
+      setScanning(false);
       await manager.cancelDeviceConnection(peripheralId);2
     } catch (error) {
       console.error('Error on disconnection:', error);
+    }
+  };
+
+  const castTo100 = (text) => {
+    if (text > 100) {
+      return 100;
+    } else if (text < 0) {
+      return 0;
+    } else {
+      return text;
     }
   };
   
@@ -259,6 +269,9 @@ export default BlindInfo = () => {
             <Text style={[styles.connectionText, { color: isConnected ? 'green' : 'red' }]}>
             {isConnected ? 'Connected' : 'Disconnected'}
             </Text>
+            <Text style={[styles.connectionText, { color: 'black' }]}>
+              {scanning ? 'Scanning...' : 'Not Scanning'}
+            </Text>
             {isConnected ? (
               <View style={styles.connectionContainer}>
                 <Text style={styles.connectionText}>Device ID: {peripheralId}</Text>
@@ -270,7 +283,9 @@ export default BlindInfo = () => {
             ) : (
               <Button title="Scan for Devices" onPress={scanAndConnect} style={styles.button} />
             )}
-
+            <View style = {{marginTop: 2}} />
+          <Button title = "Control Using User Data" onPress={() => setUserInput(!userInput)} style={{color: userInput ? 'green' : 'red'}}/>
+          <Text style={styles.infoText}>User Input: {userInput ? 'On' : 'Off'}</Text>
           </View>
         )}  
         {step === 1 && (
@@ -307,7 +322,7 @@ export default BlindInfo = () => {
                   style={styles.overallInput}
                   placeholder={lightLevel.toString()}
                   value={lightLevel.toString()}
-                  onChangeText={(text) => setLightLevel(text)}
+                  onChangeText={(text) => setLightLevel(castTo100(text))}
                   keyboardType="numeric"
                   maxLength={2}
                 />
@@ -359,15 +374,10 @@ export default BlindInfo = () => {
                 />
               </View>
               <Button title="Send Open Value" onPress={() => handleSendData("Open")} style={styles.button} />
+              <Button title="Back" onPress={() => setStep(0)} style={styles.button} />
             </View>
           </View>
         )}
-
-          <View style={styles.BackAndNext}>
-          {step === 1 && (
-            <Button title="Back" onPress={() => setStep(0)} style={styles.button} />
-          )}
-        </View>
       </View>
     </View>
   );
@@ -431,5 +441,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#007AFF',
     borderRadius: 5,
+  },
+  buttonDisabled: {
+    marginTop: 10,
+    color: '#007AFF',
+    marginBottom: 10,
+    opacity: 0.5,
   },
 });
